@@ -28,7 +28,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         static let ground    : UInt32 = 0b10000
         static let ringLeft  : UInt32 = 0b100000
         static let ringRight : UInt32 = 0b1000000
-        static let rainbow : UInt32 = 0b10000000
+        static let rainbow   : UInt32 = 0b10000000
         static let killLine  : UInt32 = 0b100000000  // Add new category
     }
     
@@ -359,17 +359,17 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     
     override func sceneDidLoad() {
         super.sceneDidLoad()
-        
+
         // Basic scene setup
         backgroundColor = .black
         physicsWorld.contactDelegate = self
         physicsWorld.gravity = CGVector(dx: 0, dy: -6)
-        
+
         // Debug visualization
         view?.showsPhysics = true
         view?.showsFPS = true
         view?.showsNodeCount = true
-        
+
         // Scene physics
         let edgeLoop = SKPhysicsBody(edgeLoopFrom: CGRect(x: 0, y: 0, width: size.width, height: size.height))
         self.physicsBody = edgeLoop
@@ -378,9 +378,51 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         self.physicsBody?.categoryBitMask = PhysicsCategory.ground
         self.physicsBody?.collisionBitMask = PhysicsCategory.obstacle
         self.physicsBody?.contactTestBitMask = PhysicsCategory.player
-        
+
         // Show title screen
         showTitleScreen()
+
+        // Adjust line widths for initial scale
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.adjustLineWidthsForScale()
+        }
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        // Adjust all line widths to compensate for scene scaling
+        adjustLineWidthsForScale()
+    }
+
+    private func adjustLineWidthsForScale() {
+        guard let view = view else { return }
+
+        // Calculate the effective scale factor
+        let scaleX = view.bounds.width / size.width
+        let scaleY = view.bounds.height / size.height
+        let effectiveScale = min(scaleX, scaleY) // Use min for aspectFit
+
+        // Recursively adjust all SKShapeNode line widths in the scene
+        adjustLineWidthsRecursively(node: self, scale: effectiveScale)
+    }
+
+    private func adjustLineWidthsRecursively(node: SKNode, scale: CGFloat) {
+        if let shapeNode = node as? SKShapeNode {
+            // Get the original line width from userData, or store it if not present
+            if let originalWidth = shapeNode.userData?["originalLineWidth"] as? CGFloat {
+                shapeNode.lineWidth = originalWidth / scale
+            } else {
+                // First time - store the original width
+                shapeNode.userData = shapeNode.userData ?? NSMutableDictionary()
+                shapeNode.userData?["originalLineWidth"] = shapeNode.lineWidth
+                shapeNode.lineWidth = shapeNode.lineWidth / scale
+            }
+        }
+
+        // Recursively process all children
+        for child in node.children {
+            adjustLineWidthsRecursively(node: child, scale: scale)
+        }
     }
     
     private func showTitleScreen() {
@@ -2095,16 +2137,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         killLine.physicsBody?.collisionBitMask = 0
         addChild(killLine)
 
-        // Create green baseline 1px up from bottom
+        // Create green baseline 3px up from bottom (ensures full visibility with 2px line width)
         let baseline = SKShapeNode()
         let baselinePath = CGMutablePath()
-        baselinePath.move(to: CGPoint(x: 0, y: 1))  // 1px up from bottom
-        baselinePath.addLine(to: CGPoint(x: size.width, y: 1))  // 1px up from bottom
-        
+        baselinePath.move(to: CGPoint(x: 0, y: 3))  // 3px up from bottom
+        baselinePath.addLine(to: CGPoint(x: size.width, y: 3))  // 3px up from bottom
+
         baseline.path = baselinePath
         baseline.strokeColor = .green
         baseline.lineWidth = baselineLineWidth
-        baseline.physicsBody = SKPhysicsBody(edgeFrom: CGPoint(x: 0, y: 1), to: CGPoint(x: size.width, y: 1))
+        baseline.physicsBody = SKPhysicsBody(edgeFrom: CGPoint(x: 0, y: 3), to: CGPoint(x: size.width, y: 3))
         baseline.physicsBody?.categoryBitMask = PhysicsCategory.baseline
         baseline.physicsBody?.contactTestBitMask = PhysicsCategory.obstacle
         baseline.physicsBody?.collisionBitMask = 0
@@ -2118,18 +2160,18 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         for i in 0..<3 {
             let deathZone = SKShapeNode()
             let deathZonePath = CGMutablePath()
-            
+
             let xPosition = spacing + (CGFloat(i) * (deathZoneWidth + spacing))
-            deathZonePath.move(to: CGPoint(x: xPosition, y: 1))  // 1px up from bottom
-            deathZonePath.addLine(to: CGPoint(x: xPosition + deathZoneWidth, y: 1))  // 1px up from bottom
-            
+            deathZonePath.move(to: CGPoint(x: xPosition, y: 3))  // 3px up from bottom
+            deathZonePath.addLine(to: CGPoint(x: xPosition + deathZoneWidth, y: 3))  // 3px up from bottom
+
             deathZone.path = deathZonePath
             deathZone.strokeColor = .red
             deathZone.lineWidth = baselineLineWidth
-            
+
             // Add physics body for death zone
-            deathZone.physicsBody = SKPhysicsBody(edgeFrom: CGPoint(x: xPosition, y: 1),
-                                                 to: CGPoint(x: xPosition + deathZoneWidth, y: 1))
+            deathZone.physicsBody = SKPhysicsBody(edgeFrom: CGPoint(x: xPosition, y: 3),
+                                                 to: CGPoint(x: xPosition + deathZoneWidth, y: 3))
             deathZone.physicsBody?.categoryBitMask = PhysicsCategory.obstacle
             deathZone.physicsBody?.contactTestBitMask = PhysicsCategory.player
             deathZone.physicsBody?.collisionBitMask = 0
@@ -2545,5 +2587,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     
     // Add with other properties
     private var gameState: GameState = .title
+}
+
+// Extension to prevent stroke scaling
+extension SKShapeNode {
+    func setLineWidthWithoutScaling(_ width: CGFloat) {
+        self.lineWidth = width
+        // Store the original line width for later adjustments if needed
+        self.userData = self.userData ?? NSMutableDictionary()
+        self.userData?["originalLineWidth"] = width
+    }
 }
 

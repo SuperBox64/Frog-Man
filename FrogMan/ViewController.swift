@@ -17,9 +17,11 @@ class ViewController: NSViewController {
         super.viewDidLoad()
         
         if let view = self.skView {
-            let scene = GameScene(size: view.bounds.size)
-            scene.scaleMode = .aspectFill
-            
+            // Use a fixed base resolution to maintain consistent stroke widths
+            let baseSize = CGSize(width: 800, height: 600)
+            let scene = GameScene(size: baseSize)
+            scene.scaleMode = .aspectFit
+
             view.presentScene(scene)
             view.ignoresSiblingOrder = true
             //view.showsPhysics = true
