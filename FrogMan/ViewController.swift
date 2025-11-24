@@ -23,10 +23,10 @@ class ViewController: NSViewController {
             scene.scaleMode = .aspectFit
 
             view.presentScene(scene)
-            view.ignoresSiblingOrder = true
-            //view.showsPhysics = true
-            view.showsFPS = true
-            view.showsNodeCount = true
+            view.ignoresSiblingOrder = false
+            //view.showsPhysics = false
+            view.showsFPS = false
+            view.showsNodeCount = false
         }
     }
 }

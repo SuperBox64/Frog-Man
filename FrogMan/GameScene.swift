@@ -113,7 +113,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var baselineScored = false
     
     // Add property to track active spawn points
-    private var activeSpawnPoints: Set<CGPoint> = []
+    // Using string representation for Big Sur compatibility (CGPoint.Hashable requires macOS 15.0+)
+    private var activeSpawnPoints: Set<String> = []
     
     // Add these properties at the top of the class
     private var totalPlatforms = 0  // Track total platforms that need to be green
@@ -366,9 +367,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: -6)
 
         // Debug visualization
-        view?.showsPhysics = true
-        view?.showsFPS = true
-        view?.showsNodeCount = true
+        view?.showsPhysics = false
+        view?.showsFPS = false
+        view?.showsNodeCount = false
 
         // Scene physics
         let edgeLoop = SKPhysicsBody(edgeLoopFrom: CGRect(x: 0, y: 0, width: size.width, height: size.height))
@@ -971,7 +972,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         }
         
         // Handle platform color changes
-        if let platform = platform, let player = playerNode as? SKNode {
+        if let platform = platform, let _ = playerNode as? SKNode {
             // Get contact normal
             let normal = contact.contactNormal
             
