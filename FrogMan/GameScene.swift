@@ -8,6 +8,7 @@
 import SpriteKit
 import GameplayKit
 import AVFoundation
+import AppKit
 
 // Add at top of file
 enum GameState {
@@ -30,6 +31,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         static let ringRight : UInt32 = 0b1000000
         static let rainbow   : UInt32 = 0b10000000
         static let killLine  : UInt32 = 0b100000000  // Add new category
+        // Was PhysicsCategory.obstacle (shared with balls) — since the death
+        // zones sit at the same y as the baseline, Box2D reports a real contact
+        // between them, which the "ball hit baseline" handler (matching on
+        // .obstacle) misidentified as a ball and deleted via removeBall(). A
+        // dedicated bit keeps death-zone contacts out of every ball-shaped
+        // collision check below.
+        static let deathZone : UInt32 = 0b1000000000
     }
     
     // Player dimensions
@@ -273,16 +281,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                     
                     audioPlayers[key] = player
                 } catch {
-                    print("Error loading sound \(key): \(error)")
+                    print("Error loading sound \(key)")
                 }
             }
         }
-        
+
         // Start audio engine
         do {
             try gameAudioEngine.start()
         } catch {
-            print("Error starting audio engine: \(error)")
+            print("Error starting audio engine")
         }
     }
     
@@ -384,8 +392,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         showTitleScreen()
 
         // Adjust line widths for initial scale
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.adjustLineWidthsForScale()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.adjustLineWidthsForScale()
         }
     }
 
@@ -410,6 +418,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private func adjustLineWidthsRecursively(node: SKNode, scale: CGFloat) {
         if let shapeNode = node as? SKShapeNode {
             // Get the original line width from userData, or store it if not present
+            #if hasFeature(Embedded)
+            if let originalWidth = shapeNode.userData?["originalLineWidth"]?.cgFloatValue {
+                shapeNode.lineWidth = originalWidth / scale
+            } else {
+                // First time - store the original width
+                shapeNode.userData = shapeNode.userData ?? NSMutableDictionary()
+                shapeNode.userData?["originalLineWidth"] = .double(Double(shapeNode.lineWidth))
+                shapeNode.lineWidth = shapeNode.lineWidth / scale
+            }
+            #else
             if let originalWidth = shapeNode.userData?["originalLineWidth"] as? CGFloat {
                 shapeNode.lineWidth = originalWidth / scale
             } else {
@@ -418,6 +436,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                 shapeNode.userData?["originalLineWidth"] = shapeNode.lineWidth
                 shapeNode.lineWidth = shapeNode.lineWidth / scale
             }
+            #endif
         }
 
         // Recursively process all children
@@ -463,7 +482,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         // Create player
         setupPlayer()
-        
+
         // Set initial level
         currentLevel = 1
         
@@ -494,11 +513,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         createPlatformsForLevel(avoidingZone: safeZone)
         
         // 1. Remove ALL existing nodes except player and score labels
+        // Reference identity (===), not the custom Equatable conformance (==)
+        // -- keeps this robust regardless of protocol-witness dispatch quirks.
         children.forEach { node in
-            if node != player && 
-               node != scoreLabel && 
-               node != livesLabel && 
-               node != levelLabel {
+            if node !== player &&
+               node !== scoreLabel &&
+               node !== livesLabel &&
+               node !== levelLabel {
                 node.removeFromParent()
             }
         }
@@ -580,9 +601,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         // Create and run delayed spawn action
         let waitAction = SKAction.wait(forDuration: randomDelay)
-        let spawnAction = SKAction.run { [weak self] in
-            guard let self = self else { return }
-            
+        let spawnAction = SKAction.run { [self] in
             // Double check we still need a ball
             if self.currentBallCount >= self.maxBalls {
                 self.isSpawningBall = false
@@ -903,7 +922,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                     // Check if player is touching the ring
                     if distanceToCenter < 70 && distanceToCenter > 50 { // Ring collision range
                         // Check metadata instead of color
-                        if let isActive = ring.userData?["isActive"] as? Bool, isActive {
+                        #if hasFeature(Embedded)
+                        let isActive = ring.userData?["isActive"]?.boolValue ?? false
+                        #else
+                        let isActive = ring.userData?["isActive"] as? Bool ?? false
+                        #endif
+                        if isActive {
                             // Create explosion effect
                             createVectorExplosion(at: ball.position)
                             score += 10
@@ -979,35 +1003,57 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             // Initialize platform metadata if it doesn't exist
             if platform.userData == nil {
                 platform.userData = NSMutableDictionary()
+                #if hasFeature(Embedded)
+                platform.userData?["state"] = .string("brown")  // Initial state
+                platform.userData?["scored"] = .bool(false)
+                #else
                 platform.userData?["state"] = "brown"  // Initial state
                 platform.userData?["scored"] = false
+                #endif
             }
-            
+
             // Get the current state
+            #if hasFeature(Embedded)
+            let currentState = platform.userData?["state"]?.stringValue ?? "brown"
+            #else
             let currentState = platform.userData?["state"] as? String ?? "brown"
-            
+            #endif
+
             // FIXED: When hitting from above (negative normal.dy), turn GREEN
             if normal.dy > 0  {  // Hit from above
                             platform.strokeColor = .green
                     platform.fillColor = .clear
                     platform.lineWidth = 2
+                #if hasFeature(Embedded)
+                platform.userData?["state"] = .string("green")
+                let alreadyScored = platform.userData?["scored"]?.boolValue == true
+                #else
                 platform.userData?["state"] = "green"
-                
-                if platform.userData?["scored"] as? Bool != true {
+                let alreadyScored = platform.userData?["scored"] as? Bool == true
+                #endif
+                if !alreadyScored {
+                    #if hasFeature(Embedded)
+                    platform.userData?["scored"] = .bool(true)
+                    #else
                     platform.userData?["scored"] = true
+                    #endif
                     score += 10
                             showScorePopup(amount: 10, at: contact.contactPoint, color: .green)
                     checkLevelCompletion()
                 }
                 playSound("platformGreen")
             }
-            
+
             // FIXED: When hitting from below (positive normal.dy), turn YELLOW
             if normal.dy < 0 && currentState == "brown" {  // Hit from below
                 platform.strokeColor = .yellow
                 platform.fillColor = .clear
                             platform.lineWidth = 2
+                #if hasFeature(Embedded)
+                platform.userData?["state"] = .string("yellow")
+                #else
                 platform.userData?["state"] = "yellow"
+                #endif
                             
                             score += 5
                 showScorePopup(amount: 5, at: contact.contactPoint, color: .yellow)
@@ -1019,7 +1065,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                                 if let ballPhysics = ball.physicsBody,
                        let platformPhysics = platform.physicsBody {
                         let contactBodies = ballPhysics.allContactedBodies()
-                        if contactBodies.contains(platformPhysics) {
+                        if contactBodies.contains(where: { $0 === platformPhysics }) {
                             createVectorImplosion(at: ball.position)
                             score += 7
                             showScorePopup(amount: 7, at: ball.position, color: .orange)
@@ -1035,8 +1081,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             }
         }
         
-        // Check for player and ball collision
-        if collision == (PhysicsCategory.player | PhysicsCategory.obstacle) {
+        // Check for player and ball collision, or player touching a death zone
+        if collision == (PhysicsCategory.player | PhysicsCategory.obstacle) ||
+           collision == (PhysicsCategory.player | PhysicsCategory.deathZone) {
             playSound("death")
             
             // Decrease life
@@ -1050,12 +1097,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             
             // Wait for death animation to complete before respawning
             let respawnDelay = SKAction.wait(forDuration: 0.7)
-            let respawnAction = SKAction.run { [weak self] in
+            let respawnAction = SKAction.run { [self] in
                 // Check for game over
-                if self?.lives ?? 0 <= 0 {
-                    self?.gameOver()
+                if lives <= 0 {
+                    gameOver()
                 } else {
-                    self?.setupPlayer()  // Only respawn if still have lives
+                    setupPlayer()  // Only respawn if still have lives
                 }
             }
             
@@ -1411,10 +1458,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private func startNextLevel() {
         // Remove ALL existing nodes except score labels and player
         children.forEach { node in
-            if node != scoreLabel && 
-               node != livesLabel && 
-               node != levelLabel &&
-               node != player {  // Preserve player
+            if node !== scoreLabel &&
+               node !== livesLabel &&
+               node !== levelLabel &&
+               node !== player {  // Preserve player
                 node.removeAllActions()
                 node.removeFromParent()
             }
@@ -1459,8 +1506,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let wait = SKAction.wait(forDuration: 1.0)
         let fadeOut = SKAction.fadeOut(withDuration: 0.5)
         let remove = SKAction.removeFromParent()
-        let setupNew = SKAction.run { [weak self] in
-            self?.setupLevel()  // Setup new level after animation
+        let setupNew = SKAction.run { [self] in
+            setupLevel()  // Setup new level after animation
         }
         
         levelComplete.run(SKAction.sequence([fadeIn, wait, fadeOut, remove, setupNew]))
@@ -1574,16 +1621,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // Draw curved top
         let topControlPoint = CGPoint(x: 0, y: headHeight/1.7 + 2)
         headPath.addQuadCurve(to: points[5], control: topControlPoint)
-        
+
         // Draw right side down
         for i in 6..<points.count {
             headPath.addLine(to: points[i])
         }
-        
+
         // Add curved bottom
         let bottomControlPoint = CGPoint(x: 0, y: -headHeight/2 - 2)
         headPath.addQuadCurve(to: points[0], control: bottomControlPoint)
-        
+
         headOutline.path = headPath
         headOutline.strokeColor = .green
         headOutline.lineWidth = 2
@@ -1629,24 +1676,24 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let rightEye = createStopSignEye(isLeft: false)
         player.addChild(leftEye)
         player.addChild(rightEye)
-        
+
         // Keep existing smile but adjust position higher
         let expression = SKShapeNode()
         let expressionPath = CGMutablePath()
         let mouthWidth: CGFloat = headWidth/2
         let mouthY = -headHeight/4 + 3  // Moved up 3 pixels
-        
+
         expressionPath.move(to: CGPoint(x: -mouthWidth/2, y: mouthY))
         expressionPath.addQuadCurve(
             to: CGPoint(x: mouthWidth/2, y: mouthY),
             control: CGPoint(x: 0, y: mouthY - 5)
         )
-        
+
         expression.path = expressionPath
         expression.strokeColor = .white
         expression.lineWidth = 2
         player.addChild(expression)
-        
+
         // Physics setup - use the same path as the head outline for physics
         player.physicsBody = SKPhysicsBody(polygonFrom: headPath)  // Use the same path we drew
         player.physicsBody?.isDynamic = true
@@ -1661,7 +1708,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                                                 PhysicsCategory.platform | PhysicsCategory.baseline
         
         // Position player higher above baseline
-        player.position = CGPoint(x: size.width * 0.05, 
+        player.position = CGPoint(x: size.width * 0.05,
                                 y: baselineHeight + playerSize.height)  // Added full height instead of half
         addChild(player)
     }
@@ -1946,8 +1993,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             node.physicsBody?.categoryBitMask == PhysicsCategory.platform
         }
         
-        // Check if all platforms are green
-        let allGreen = platforms.allSatisfy { platform in
+        // Check if all platforms are green. Two guards, both needed:
+        // - !platforms.isEmpty: allSatisfy is vacuously true on an empty array.
+        // - platforms.count >= totalPlatforms: re-deriving the platform set
+        //   from `children` can catch a moment mid-transition where only a
+        //   handful of (fresh, already-green-by-coincidence) platforms exist
+        //   yet, between the old level being cleared and the new one fully
+        //   built — a false "all green" there re-triggers startNextLevel(),
+        //   which cascades into a rapid clear/rebuild loop (wiping the
+        //   baseline/death zones along with everything else, repeatedly).
+        let allGreen = !platforms.isEmpty && platforms.count >= totalPlatforms && platforms.allSatisfy { platform in
             if let platform = platform as? SKShapeNode {
                 return platform.strokeColor == .green
             }
@@ -2169,14 +2224,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             deathZone.path = deathZonePath
             deathZone.strokeColor = .red
             deathZone.lineWidth = baselineLineWidth
+            deathZone.name = "deathZone"
 
             // Add physics body for death zone
             deathZone.physicsBody = SKPhysicsBody(edgeFrom: CGPoint(x: xPosition, y: 3),
                                                  to: CGPoint(x: xPosition + deathZoneWidth, y: 3))
-            deathZone.physicsBody?.categoryBitMask = PhysicsCategory.obstacle
+            deathZone.physicsBody?.categoryBitMask = PhysicsCategory.deathZone
             deathZone.physicsBody?.contactTestBitMask = PhysicsCategory.player
             deathZone.physicsBody?.collisionBitMask = 0
-            
+
             addChild(deathZone)
         }
     }
@@ -2194,7 +2250,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         // Remove the ball from the scene and arrays
         ball.removeFromParent()
-        if let index = basketballs.firstIndex(of: ball) {
+        if let index = basketballs.firstIndex(where: { $0 === ball }) {
             basketballs.remove(at: index)
             currentBallCount -= 1
         }
@@ -2596,7 +2652,11 @@ extension SKShapeNode {
         self.lineWidth = width
         // Store the original line width for later adjustments if needed
         self.userData = self.userData ?? NSMutableDictionary()
+        #if hasFeature(Embedded)
+        self.userData?["originalLineWidth"] = .double(Double(width))
+        #else
         self.userData?["originalLineWidth"] = width
+        #endif
     }
 }
 

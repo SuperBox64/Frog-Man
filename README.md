@@ -4,7 +4,7 @@ Developed using AI.
 
 Created by Logos InkPen LLC
 
-Designed by Todd Bruss
+Designed by Heisenburg
 
 <img width="912" height="740" alt="Screenshot 2025-08-07 at 11 12 24 PM" src="https://github.com/user-attachments/assets/b260bf82-ddec-46a3-8760-748994e139fe" />
 <img width="913" height="741" alt="Screenshot 2025-08-07 at 11 20 13 PM" src="https://github.com/user-attachments/assets/98e607b5-dc6d-4c85-85e2-8ea934573e8a" />
