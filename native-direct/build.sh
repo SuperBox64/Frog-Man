@@ -1,0 +1,14 @@
+#!/bin/bash
+# FrogMan direct-native build: a thin wrapper over the framework's
+# build-native-game.sh. Sounds bake into the binary - single file, no wasm.
+set -euo pipefail
+cd "$(dirname "$0")"
+GAME_SRC="$(pwd)/game-src"
+rm -rf game-src && mkdir game-src
+ln -s "$(cd ../frogman-web/Sources/FrogMan && pwd)/GameScene.swift" game-src/GameScene.swift
+GAME_SRC="$GAME_SRC" \
+GAME_MAIN="$(pwd)/main.swift" \
+ASSETS_DIR="$(cd ../frogman-web/web/assets/sfx && pwd)" \
+OUT="$(pwd)/frogman-direct" \
+  ../../SuperBox64Kit/native/build-native-game.sh
+rm -rf game-src

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FrogMan · SuperBox64 SpriteKit Swift on WASM</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+      display: flex; align-items: center; justify-content: center; }
+    #game { width: min(100vw, calc(100vh * 800 / 600)); aspect-ratio: 800 / 600;
+      background: #000; object-fit: contain; outline: none; }
+    #game:fullscreen, #game:-webkit-full-screen { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="800" height="600" tabindex="0"></canvas>
+  <script>
+    window.__errs = [];
+    window.onerror = (msg, src, line, col, err) => { window.__errs.push('onerror: ' + msg + ' @' + line + ':' + col); };
+    window.addEventListener('unhandledrejection', (e) => { window.__errs.push('unhandledrejection: ' + (e.reason && e.reason.stack ? e.reason.stack : e.reason)); });
+    const _ce = console.error;
+    console.error = (...a) => { window.__errs.push('console.error: ' + a.map(String).join(' ')); _ce.apply(console, a); };
+    window.WASMWEB = { logicalWidth: 800, logicalHeight: 600, wasmUrl: 'frogman.wasm', assetRoot: 'assets', title: 'FROGMAN', cacheBust: Date.now() };
+  </script>
+  <script src="runtime.js"></script>
+<div class="agentiloop-backlink" style="position:fixed;right:8px;bottom:6px;z-index:2147483647;font:11px/1.4 -apple-system,system-ui,sans-serif;color:#aaa;opacity:.7">Built by <a style="color:inherit" href="https://agentiloop.ai">AgentiLoop</a> &middot; <a style="color:inherit" href="mailto:agent@agentiloop.ai">agent@agentiloop.ai</a></div>
+</body>
+</html>
